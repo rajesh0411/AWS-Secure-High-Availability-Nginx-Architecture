@@ -1,0 +1,298 @@
+
+AWS Secure High Availability Nginx Architecture
+Step-by-Step Project Build Guide
+
+====================================================
+PHASE 1 — CREATE VPC
+====================================================
+
+1. Navigate to:
+   AWS Console → VPC → Your VPCs → Create VPC
+
+2. Configure:
+   - Name: project-vpc
+   - CIDR: 10.0.0.0/16
+   - Enable DNS Hostnames
+   - Enable DNS Resolution
+
+3. Click Create VPC
+
+====================================================
+PHASE 2 — CREATE SUBNETS
+====================================================
+
+4. Create Public Subnet A
+   - Name: public-subnet-a
+   - AZ: ap-south-1a
+   - CIDR: 10.0.1.0/24
+
+5. Create Public Subnet B
+   - Name: public-subnet-b
+   - AZ: ap-south-1b
+   - CIDR: 10.0.2.0/24
+
+6. Create Private Subnet A
+   - Name: private-subnet-a
+   - AZ: ap-south-1a
+   - CIDR: 10.0.11.0/24
+
+7. Create Private Subnet B
+   - Name: private-subnet-b
+   - AZ: ap-south-1b
+   - CIDR: 10.0.12.0/24
+
+====================================================
+PHASE 3 — INTERNET GATEWAY
+====================================================
+
+8. Navigate to:
+   VPC → Internet Gateways → Create Internet Gateway
+
+9. Configure:
+   - Name: project-igw
+
+10. Attach IGW to project-vpc
+
+====================================================
+PHASE 4 — PUBLIC ROUTE TABLE
+====================================================
+
+11. Create Route Table
+   - Name: public-rt
+
+12. Add Route:
+   - Destination: 0.0.0.0/0
+   - Target: Internet Gateway
+
+13. Associate:
+   - public-subnet-a
+   - public-subnet-b
+
+====================================================
+PHASE 5 — NAT GATEWAY
+====================================================
+
+14. Allocate Elastic IP
+
+15. Create NAT Gateway
+   - Name: project-nat
+   - Subnet: public-subnet-a
+   - Elastic IP: allocated EIP
+
+16. Wait until NAT Gateway becomes Available
+
+====================================================
+PHASE 6 — PRIVATE ROUTE TABLE
+====================================================
+
+17. Create Route Table
+   - Name: private-rt
+
+18. Add Route:
+   - Destination: 0.0.0.0/0
+   - Target: NAT Gateway
+
+19. Associate:
+   - private-subnet-a
+   - private-subnet-b
+
+====================================================
+PHASE 7 — IAM ROLE
+====================================================
+
+20. Navigate to:
+   IAM → Roles → Create Role
+
+21. Select:
+   - AWS Service
+   - EC2
+
+22. Attach Policy:
+   - AmazonSSMManagedInstanceCore
+
+23. Role Name:
+   - ec2-ssm-role
+
+====================================================
+PHASE 8 — SECURITY GROUPS
+====================================================
+
+24. Create ALB Security Group
+   - Name: alb-sg
+
+25. Add Inbound Rule:
+   - HTTP 80 from 0.0.0.0/0
+
+26. Create EC2 Security Group
+   - Name: ec2-sg
+
+27. Add Inbound Rule:
+   - HTTP 80 from alb-sg
+
+28. Do NOT allow SSH from internet
+
+====================================================
+PHASE 9 — LAUNCH TEMPLATE
+====================================================
+
+29. Navigate to:
+   EC2 → Launch Templates → Create Launch Template
+
+30. Configure:
+   - Name: nginx-template
+   - AMI: Amazon Linux 2023
+   - Instance Type: t2.micro
+   - Security Group: ec2-sg
+   - IAM Role: ec2-ssm-role
+
+31. Disable Public IP Assignment
+
+32. Add User Data Script:
+
+#!/bin/bash
+
+dnf update -y
+dnf install nginx -y
+
+systemctl enable nginx
+systemctl start nginx
+
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+
+cat <<EOF > /usr/share/nginx/html/index.html
+<html>
+<body style="background-color:black;color:white;text-align:center;padding-top:100px;">
+<h1>Secure AWS HA Architecture</h1>
+<h2>Served from EC2 Instance:</h2>
+<h3>$INSTANCE_ID</h3>
+</body>
+</html>
+EOF
+
+====================================================
+PHASE 10 — TARGET GROUP
+====================================================
+
+33. Navigate to:
+   EC2 → Target Groups → Create Target Group
+
+34. Configure:
+   - Target Type: Instances
+   - Protocol: HTTP
+   - Port: 80
+   - Health Check Path: /
+
+====================================================
+PHASE 11 — APPLICATION LOAD BALANCER
+====================================================
+
+35. Navigate to:
+   EC2 → Load Balancers → Create Load Balancer
+
+36. Select:
+   - Application Load Balancer
+
+37. Configure:
+   - Name: project-alb
+   - Scheme: Internet Facing
+
+38. Select Subnets:
+   - public-subnet-a
+   - public-subnet-b
+
+39. Attach Security Group:
+   - alb-sg
+
+40. Listener:
+   - HTTP 80
+
+41. Forward To:
+   - project-target-group
+
+====================================================
+PHASE 12 — AUTO SCALING GROUP
+====================================================
+
+42. Navigate to:
+   EC2 → Auto Scaling Groups → Create Auto Scaling Group
+
+43. Configure:
+   - Name: project-asg
+   - Launch Template: nginx-template
+
+44. Select Subnets:
+   - private-subnet-a
+   - private-subnet-b
+
+45. Attach Existing Load Balancer
+
+46. Select:
+   - project-target-group
+
+47. Enable:
+   - ELB Health Checks
+
+48. Configure Capacity:
+   - Desired: 2
+   - Minimum: 2
+   - Maximum: 4
+
+====================================================
+PHASE 13 — VALIDATION
+====================================================
+
+49. Verify:
+   - 2 EC2 instances are running
+   - Instances do NOT have public IPs
+
+50. Verify Target Group Health:
+   - Targets should be Healthy
+
+51. Copy ALB DNS Name
+
+52. Open ALB DNS in browser
+
+53. Refresh page multiple times to observe:
+   - Load balancing between instances
+
+====================================================
+PHASE 14 — SESSION MANAGER ACCESS
+====================================================
+
+54. Navigate to:
+   EC2 → Instances
+
+55. Select instance
+
+56. Click:
+   Connect → Session Manager
+
+57. Access instance securely without SSH
+
+====================================================
+PHASE 15 — MONITORING
+====================================================
+
+58. Navigate to:
+   CloudWatch → Metrics
+
+59. Review:
+   - ALB Metrics
+   - EC2 Metrics
+   - Auto Scaling Metrics
+
+====================================================
+PROJECT COMPLETE
+====================================================
+
+This project demonstrates:
+
+- Secure VPC architecture
+- Public and private subnet design
+- NAT Gateway implementation
+- Load balancing
+- Auto Scaling
+- High availability
+- IAM best practices
+- Session Manager access
+- Cloud security concepts
