@@ -38,7 +38,7 @@ The infrastructure follows AWS security best practices including:
 
 # Architecture Diagram
 
-![Architecture Diagram](architecture-diagram.png)
+![Architecture Diagram](Architecture.png)
 
 ---
 
